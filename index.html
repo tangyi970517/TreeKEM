@@ -1,0 +1,851 @@
+<!DOCTYPE html>
+<html><head>
+
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+
+<title>TreeKEM Comparison</title>
+
+</head><body>
+
+<h1>TreeKEM Comparison</h1>
+
+<h2>Options</h2>
+
+<script>
+function stringify(obj) {
+    return encodeURIComponent(JSON.stringify(obj));
+}
+function parse(str) {
+    return JSON.parse(decodeURIComponent(str));
+}
+function generateSelect(id, values, selected = null) {
+    document.write(
+`<select id="${id}">
+    ${values.map(value => `<option value="${stringify([value])}" ${value === selected ? 'selected' : ''}>${value.charAt(0).toUpperCase()}${value.slice(1)}</option>`).join('')}
+    <option value="${stringify(values)}">-Compare ${values.length === 2 ? 'Both' : 'All'}-</option>
+</select>`
+    );
+}
+</script>
+
+<p>Left-balanced tree - position to add new leaf: <script>generateSelect('left-position', ['greedy', 'random', 'append'])</script></p>
+<ul>
+    <li>Greedy: choose closest (in terms of LCA) blank leaf or append if no blank leaf</li>
+    <li>Random: uniformly choose a blank leaf <em>including the append position as an pseudo blank leaf</em></li>
+    <li>Append: append to the end</li>
+</ul>
+
+<p>Left-balanced tree - truncate strategy: <script>generateSelect('left-truncate', ['truncate', 'keep'], 'truncate')</script></p>
+<ul>
+    <li>Truncate: truncate the tree when the leaf at the end is removed</li>
+    <li>Keep: keep the removed the leaf at the end as blank leaf</li>
+</ul>
+
+<p>B tree - position to add new leaf: <script>generateSelect('b-position', ['greedy', 'random'])</script></p>
+<ul>
+    <li>Greedy: place the new leaf such that it shares the same parent with a reference leaf (the adder in tree KEM)</li>
+    <li>Random: follow greedy policy with a uniformly chosen reference leaf</li>
+</ul>
+
+<p>B tree - degree: <script>generateSelect('b-degree', ['3', '4'])</script></p>
+<ul>
+    <li>3: 2-3 tree</li>
+    <li>4: 2-3-4 tree</li>
+</ul>
+
+<p>KEM - add strategy: <script>generateSelect('add', ['async-sync', 'async', 'sync'])</script></p>
+<ul>
+    <li>Async-sync: async for left-balanced tree and sync for B tree</li>
+    <li>Async: exclude update of new user in add, simply blank out the path (update of new user is possibly done asynchronously when the new user gets online for the first time)</li>
+    <li>Sync: include update of new user (done by adder) in add</li>
+</ul>
+
+<p>KEM - remove strategy: <script>generateSelect('remove', ['remover', 'remover-after', 'removee'])</script></p>
+<ul>
+    <li>Remover: blank out the direct path of removee, remove from tree, and then update at the remover</li>
+    <li>Remover-after: blank out the direct path of removee, update at the remover, and then remove from tree</li>
+    <li>Removee: update at the removee and then blank out (and then remove from tree)</li>
+</ul>
+
+<p>KEM - update strategy: <script>generateSelect('update', ['LCA', 'root'])</script></p>
+<ul>
+    <li>LCA: blank out until the lowest common ancestor</li>
+    <li>Root: blank out whole direct path</li>
+</ul>
+
+<p>KEM - merge strategy: <script>generateSelect('merge', ['blank', 'keep'])</script></p>
+<ul>
+    <li>Blank: blank out merged node</li>
+    <li>Keep: keep secret that only covers a subset of children at merged node</li>
+</ul>
+
+<p>KEM - split strategy: <script>generateSelect('split', ['blank', 'keep'])</script></p>
+<ul>
+    <li>Blank: blank out split node</li>
+    <li>Keep: keep secret that covers the children at grandparent node</li>
+</ul>
+
+<p>Experiment - initial group size <code>n</code>: <input id="n" value="100" /> (separate by comma "<code>,</code>" to compare multiple values)</p>
+
+<p>Experiment - random operation number <code>k</code>: <input id="k" value="1000" /> (separate by comma "<code>,</code>" to compare multiple values)</p>
+
+<p>Experiment - add operation weight <code>w</code><sub>add</sub>: <input id="r" value="0.333333" /> (separate by comma "<code>,</code>" to compare multiple values)</p>
+
+<p>Experiment - update operation weight <code>w</code><sub>update</sub>: <input id="ru" value="0.333333" /> (separate by comma "<code>,</code>" to compare multiple values)</p>
+
+<blockquote>
+    <p><code>w</code><sub>remove</sub> = 1 - <code>w</code><sub>add</sub> - <code>w</code><sub>update</sub>; when the group size is 1 no randomization is performed and add operation is forced</p>
+</blockquote>
+
+<p>Experiment - insert update at first operation: <script>generateSelect('insert', ['async-sync', 'insert', 'untouched'])</script></p>
+<ul>
+    <li>Async-sync: insert for add strategy async and untouched for sync</li>
+    <li>Insert: insert an update operation at each user's first operation</li>
+    <li>Untouched: keep the operation sequence untouched</li>
+</ul>
+
+<p>Experiment - operation sequence: <script>generateSelect('sequence', ['random', 'manual'])</script></p>
+<blockquote>
+    <p>Manual sequence: (e.g. `add,0,<code>n</code>,update,<code>n</code>,remove,<code>n</code>,0`)</p>
+    <textarea id="seq"></textarea>
+</blockquote>
+
+<p>Experiment - trace trees: <input type="checkbox" id="trace" /></p>
+<blockquote>
+    <p>Trace Log:</p>
+    <textarea id="tr"></textarea>
+</blockquote>
+
+<h2>Results <button id="restart">Restart</button></h2>
+
+<table id="results" style="text-align: right; border-spacing: 1em;">
+    <tr>
+        <td>Method</td>
+        <td><code>n</code></td>
+        <td><code>k</code></td>
+        <td><code>w</code><sub>add</sub></td>
+        <td><code>w</code><sub>remove</sub></td>
+        <td><code>w</code><sub>update</sub></td>
+        <td><code>k</code><sub>add</sub></td>
+        <td><code>k</code><sub>remove</sub></td>
+        <td><code>k</code><sub>update</sub></td>
+        <td>#PRG</td>
+        <td>#Gen</td>
+        <td>#Enc</td>
+        <td>#Dec</td>
+        <td>Op. Seq.</td>
+        <td>Trace</td>
+    </tr>
+</table>
+
+<script>
+const assert = cond => {
+    if (!cond) {
+        throw new Error(cond);
+    }
+};
+// assert(false);
+
+class Tree {
+    constructor(parent = null, children = [], info = {}) {
+        this.parent = parent;
+        this.children = children;
+        Object.assign(this, info);
+    }
+    getRoot() {
+        const {parent} = this;
+        if (parent === null) {
+            return this;
+        }
+        return parent.getRoot();
+    }
+}
+
+const LeftTree = (position = 'greedy', truncate = 'truncate') => {
+    assert([
+        'greedy',
+        'random',
+        'append',
+    ].includes(position) && [
+        'truncate',
+        'keep',
+    ].includes(truncate));
+    return (
+class LeftTree extends Tree { // left-balanced tree: either perfect, or left child is the largest perfect tree using all leaves (i.e. [#leaf in left child] = 2^floor(log2[#leaf]))
+    constructor(parent, children = [null, null], info) {
+        super(parent, children, info);
+        const [childL, childR] = children;
+        this.setChildren(childR, childL);
+    }
+    get children() {
+        return [this.childL, this.childR];
+    }
+    set children(children) {
+        // ineffective
+    }
+    setChildren(childR = this.childR, childL = this.childL) {
+        if (childL !== null) {
+            assert(childL.perfect);
+        }
+        this.childL = childL;
+        this.childR = childR;
+        this.perfect = childL === null && childR === null ? 1 : childL.perfect === childR.perfect ? childL.perfect + 1 : NaN;
+    }
+    append(leaf = new this.constructor(), info = {}) {
+        assert(this !== null); // leaf is always perfect
+        if (this.perfect) {
+            const node = new this.constructor(this.parent, [this, leaf], info);
+            leaf.parent = node;
+            this.parent = node;
+            return node;
+        }
+        this.setChildren(this.childR.append(leaf, info)); // always append to right child
+        return this;
+    }
+    truncate() {
+        const node = this.childR;
+        if (node === null) {
+            throw new Error('attempting to remove the last node');
+        }
+        if ( /* node.childL === null && */ node.childR === null) { // leaf
+            assert(node.childL === null);
+            if (node.recycle) {
+                this.childL.parent = this.parent;
+                return this.childL;
+            } else {
+                return this;
+            }
+        }
+        this.setChildren(this.childR.truncate());
+        return this;
+    }
+    add(leaf, hint, info, _onRemoveChild) {
+        let recycle;
+        switch (position) {
+            case 'greedy': {
+                recycle = this.constructor.recycle(hint).next().value;
+            } break;
+            case 'random': {
+                const recycles = [...this.constructor.recycle(hint)];
+                recycle = recycles[Math.floor(Math.random() * (recycles.length + 1))]; // +1 for the chance to append
+            } break;
+            case 'append': {} break;
+        }
+        if (!recycle) {
+            return this.append(leaf, info);
+        }
+        const parent = recycle.parent;
+        recycle.parent = null;
+        leaf.parent = parent;
+        if (parent.childL === recycle) {
+            parent.childL = leaf;
+        } else {
+            assert(parent.childR === recycle);
+            parent.childR = leaf;
+        }
+        return this;
+    }
+    remove(leaf, _onRemoveChild, _onAddChild) {
+        leaf.recycle = true;
+        switch (truncate) {
+            case 'truncate': {
+                let root = this;
+                while (true) {
+                    const rootNew = root.truncate();
+                    if (rootNew === root) {
+                        break;
+                    }
+                    root = rootNew;
+                }
+                return root;
+            } break;
+            case 'keep': {
+                return this;
+            } break;
+        }
+    }
+    static * recycle(leaf) {
+        let node = leaf;
+        assert(node !== null);
+        while (node.parent !== null) {
+            if (node.parent.childL === node) {
+                yield * this.recycleLeaves(node.parent.childR);
+            } else {
+                assert(node.parent.childR === node);
+                yield * this.recycleLeaves(node.parent.childL);
+            }
+            node = node.parent;
+        }
+    }
+    static * recycleLeaves(root) {
+        if ( /* root.childL === null && */ root.childR === null) { // leaf
+            assert(root.childL === null);
+            if (root.recycle) {
+                yield root;
+            }
+            return;
+        }
+        assert(root.childL !== null && root.childR !== null);
+        yield * this.recycleLeaves(root.childL);
+        yield * this.recycleLeaves(root.childR);
+    }
+}
+    );
+};
+
+const BTree = (m = 3, position = 'greedy') => {
+    assert([
+        'greedy',
+        'random',
+    ].includes(position));
+    const max = m, min = Math.ceil(m / 2);
+    return (
+class BTree extends Tree {
+    // constructor = super
+    addSibling(leaf = new this.constructor(), info = {}, onRemoveChild = () => {}) {
+        const {parent} = this;
+        if (parent === null) {
+            const root = new this.constructor(undefined, [this, leaf], info);
+            this.parent = leaf.parent = root;
+            return root;
+        }
+        assert(parent.children.length <= max);
+        parent.children.splice(parent.children.indexOf(this), 1);
+        parent.children.push(this, leaf); // move node to the end, next to the new leaf
+        leaf.parent = parent;
+        if (parent.children.length > max) {
+            const node = new this.constructor(parent.parent, parent.children.splice(min), info);
+            for (const child of node.children) {
+                child.parent = node;
+            }
+            onRemoveChild(parent, parent.parent, ...node.children);
+            if (parent.parent === null) {
+                const root = new this.constructor(undefined, [parent, node], info);
+                parent.parent = node.parent = root;
+                return root;
+            }
+            return parent.addSibling(node, info, onRemoveChild);
+        }
+        return parent.getRoot();
+    }
+    removeSelf(onRemoveChild = () => {}, onAddChild = () => {}) {
+        const {parent} = this;
+        if (parent === null) {
+            throw new Error('attempting to delete the last node');
+        }
+        parent.children.splice(parent.children.indexOf(this), 1);
+        if (parent.children.length < min && parent.parent !== null) {
+            let p;
+            // try move
+            p = parent.parent.children.find(p => /* p !== parent && */ p.children.length > min);
+            if (p !== undefined) {
+                const move = p.children.pop();
+                parent.children.push(move);
+                move.parent = parent;
+                onRemoveChild(p, parent.parent, move);
+                // onAddChild(parent, parent.parent, move); // not necessary
+                return parent.getRoot();
+            }
+            // try merge
+            p = parent.parent.children.find(p => p !== parent && p.children.length + parent.children.length <= max);
+            if (p !== undefined) {
+                p.children.push(...parent.children);
+                for (const child of parent.children) {
+                    child.parent = p;
+                }
+                const children = parent.children;
+                parent.children = [];
+                onAddChild(p, parent.parent, ...children);
+                return parent.removeSelf(onRemoveChild, onAddChild);
+            }
+            // either move or merge must succeed
+            assert(false);
+        } else if (parent.parent === null && parent.children.length === 1) {
+            const root = parent.children[0];
+            root.parent = null;
+            return root;
+        }
+        return parent.getRoot();
+    }
+    add(leaf, hint, info, onRemoveChild) {
+        switch (position) {
+            case 'greedy': {
+                return hint.addSibling(leaf, info, onRemoveChild);
+            } break;
+            case 'random': {
+                const that = this;
+                const leaves = [...function * getLeaves(root = that) {
+                    if (root.children.length === 0) { // leaf
+                        yield root;
+                        return;
+                    }
+                    for (const child of root.children) {
+                        yield * getLeaves(child);
+                    }
+                }()];
+                const hint = leaves[Math.floor(Math.random() * leaves.length)];
+                return hint.addSibling(leaf, info, onRemoveChild);
+            } break;
+        }
+    }
+    remove(leaf, onRemoveChild, onAddChild) {
+        return leaf.removeSelf(onRemoveChild, onAddChild);
+    }
+}
+    );
+};
+const $23Tree = position => BTree(3, position);
+const $234Tree = position => BTree(4, position);
+
+const testTree = (TreeType, n = 10) => {
+    const print = (tree, depth = 0) => {
+        if (tree === null) {
+            return;
+        }
+        if (depth === 0) {
+            console.info(tree);
+        }
+        console.log(Array(depth).fill('--').join('') + (tree.recycle || tree.perfect || tree.children.length));
+        for (const child of tree.children) {
+            print(child, depth + 1);
+        }
+    };
+    let tree = new TreeType();
+    const leaf = tree;
+    print(tree);
+    for (let i = 0; i < n; ++i) {
+        tree = tree.add(undefined, leaf);
+        print(tree);
+    }
+};
+
+const TreeKEM = (TreeType, add = 'async', remove = 'remover', update = 'LCA', merge = 'blank', split = 'blank') => {
+    assert([
+        'async',
+        'sync',
+    ].includes(add) && [
+        'remover',
+        'remover-after',
+        'removee',
+    ].includes(remove) && [
+        'LCA',
+        'root',
+    ].includes(update) && [
+        'blank',
+        'keep',
+    ].includes(merge) && [
+        'blank',
+        'keep',
+    ].includes(split));
+    return (
+class TreeKEM {
+    constructor() {
+        this.root = new TreeType(undefined, undefined, {removed: false, id: 0, counts: [0, 0, 0, 0]});
+        this.users = [this.root];
+        this.options = {};
+    }
+    init(n) {
+        throw new Error('not implemented');
+    }
+    add(a, b) {
+        assert(a in this.users && b === this.users.length);
+        this.users.push(new TreeType(undefined, undefined, {removed: false, id: b, counts: [0, 0, 0, 0]})); // counts: [prg, gen, enc, dec]
+        const ua = this.users[a], ub = this.users[b];
+        let onRemoveChild;
+        switch (split) {
+            case 'blank': {
+                onRemoveChild = parent => (parent.secret = []);
+            } break;
+            case 'keep': {
+                onRemoveChild = (parent, grandparent) => {
+                    if (parent.secret !== true) {
+                        grandparent && (grandparent.secretGrand = parent.secret);
+                    } else {
+                        grandparent && (grandparent.secretGrand = parent.children.slice());
+                    }
+                    parent.secret = [];
+                };
+            } break;
+        }
+        switch (add) {
+            case 'async': {
+                // modify tree
+                this.root = this.root.add(ub, ua, {secret: [], secretGrand: []}, onRemoveChild);
+                // blank out
+                let node = ub.parent;
+                while (node !== null) {
+                    node.secret = [];
+                    node = node.parent;
+                }
+            } break;
+            case 'sync': {
+                // modify tree
+                const blanks = [];
+                this.root = this.root.add(ub, ua, {secret: [], secretGrand: []}, (parent, grandparent, ...children) => {
+                    if (parent.secret !== true) {
+                        parent.secret = parent.secret.filter(c => !children.includes(c)); // ensure secret subset children
+                    }
+                    blanks.push([parent, grandparent]);
+                });
+                // update
+                this.update(b, a);
+                // modify tree cont.
+                for (const [node, parent] of blanks) {
+                    onRemoveChild(node, parent);
+                }
+            } break;
+        }
+    }
+    remove(a, b) {
+        assert(a in this.users && b in this.users && b !== a);
+        const ua = this.users[a], ub = this.users[b];
+        this.setRemoved(ub);
+        let onAddChild;
+        switch (merge) {
+            // grandparent always not null
+            case 'blank': {
+                onAddChild = parent => (parent.secret = []);
+            } break;
+            case 'keep': {
+                onAddChild = (parent, grandparent, ...children) => (parent.secret = parent.children.filter(c => !children.includes(c)));
+            } break;
+        }
+        switch (remove) {
+            case 'remover': {
+                // blank out
+                let node = ub.parent;
+                while (node !== null) {
+                    node.secret = [];
+                    node = node.parent;
+                }
+                // modify tree
+                const blanks = [], merges = [];
+                this.root = this.root.remove(ub, (parent, grandparent, ...children) => {
+                    if (parent.secret !== true) {
+                        parent.secret = parent.secret.filter(c => !children.includes(c)); // ensure secret subset children
+                    }
+                    blanks.push(parent);
+                }, (parent, grandparent, ...children) => merges.push([parent, children]));
+                // update at remover
+                this.update(a);
+                // modify tree cont.
+                for (const node of blanks) {
+                    node.secret = [];
+                }
+                for (const [node, children] of merges) {
+                    onAddChild(node, ...children);
+                }
+            } break;
+            case 'remover-after': {
+                // blank out
+                let node = ub.parent;
+                while (node !== null) {
+                    node.secret = [];
+                    node = node.parent;
+                }
+                // update at remover
+                this.update(a);
+                // modify tree
+                this.root = this.root.remove(ub, parent => (parent.secret = []), onAddChild);
+            } break;
+            case 'removee': {
+                // update at removee
+                this.update(b, a);
+                // modify tree
+                this.root = this.root.remove(ub, parent => (parent.secret = []), onAddChild);
+            } break;
+        }
+    }
+    setRemoved(leaf, removed = true) {
+        leaf.removed = removed;
+        const updateRemoved = root => {
+            if ('counts' in root) { // leaf
+                return;
+            }
+            for (const child of root.children) {
+                updateRemoved(child);
+            }
+            root.removed = root.children.every(c => c.removed);
+        };
+        updateRemoved(this.root);
+    }
+    update(b, a = b) {
+        assert(a in this.users && b in this.users);
+        const ua = this.users[a], ub = this.users[b];
+        this.setRemoved(ua, true); // set removed temporarily to prevent enc to oneself
+        let node;
+        // update and broadcast
+        node = ub;
+        const path = [];
+        while (node !== null) {
+            path.unshift(node);
+            ++ua.counts[0]; // prg
+            if (node.parent !== null) {
+                ++ua.counts[1]; // gen
+                let find = false;
+                for (const copath of node.parent.children) {
+                    if (copath === node) {
+                        find = true;
+                        continue;
+                    }
+                    this.constructor.broadcast(copath, ua.counts);
+                }
+                assert(find);
+            }
+            if (node !== ub) {
+                node.secret = true;
+            }
+            node = node.parent;
+        }
+        this.setRemoved(ua, false); // unset removed
+        // blank out
+        // ineffective when a = b
+        switch (update) {
+            case 'LCA': {
+                node = ua;
+                while (!path.includes(node)) {
+                    assert(node !== null);
+                    node = node.parent;
+                }
+            } break;
+            case 'root': {
+                node = path[0];
+            } break;
+        }
+        for (let i = path.indexOf(node) + 1; i < path.length - 1; ++i) {
+            path[i].secret = [];
+        }
+    }
+    static broadcast(root, counts, count = true, secretGrand = []) {
+        assert(root !== null);
+        if (root.removed) {
+            return;
+        }
+        if ('counts' in root) { // leaf
+            if (count) {
+                ++counts[2]; // enc
+            }
+            ++root.counts[3]; // dec
+            return;
+        }
+        assert(root.secret === true || root.secret.every(c => root.children.includes(c)));
+        let useSecretGrand = false, useSecret = false, selfSecretGrandUsed = false;
+        for (const child of root.children) {
+            if (secretGrand.includes(child)) {
+                useSecretGrand = true;
+                selfSecretGrandUsed = this.broadcast(child, null, false, root.secretGrand);
+            } else if (root.secret === true || root.secret.includes(child)) {
+                useSecret = true;
+                selfSecretGrandUsed = this.broadcast(child, null, false, root.secretGrand);
+            } else {
+                selfSecretGrandUsed = this.broadcast(child, counts, count, root.secretGrand);
+            }
+        }
+        if (count) {
+            if (useSecret) {
+                ++counts[2]; // enc
+            }
+            if (selfSecretGrandUsed) {
+                ++counts[2]; // enc
+            }
+        }
+        return useSecretGrand;
+    }
+}
+    );
+};
+
+const testTreeKEM = (TreeType, add, remove, update, merge, n = 10) => {
+    const print = (tree, depth = 0) => {
+        if (tree === null) {
+            return;
+        }
+        if (depth === 0) {
+            console.info(tree);
+        }
+        console.log(Array(depth).fill('--').join('') + (tree.counts || tree.children.map(child => tree.secret === true || tree.secret.includes(child))));
+        for (const child of tree.children) {
+            print(child, depth + 1);
+        }
+    };
+    const TreeKEMType = TreeKEM(TreeType, add, remove, update, merge);
+    const tree = new TreeKEMType();
+    print(tree.root);
+    for (let i = 0; i < n; ++i) {
+        tree.add(0);
+        print(tree.root);
+    }
+};
+
+// testTree(LeftTree());
+// testTree($23Tree());
+// testTree($234Tree());
+// testTreeKEM(LeftTree(), 'sync');
+// testTreeKEM($23Tree(), 'sync');
+// testTreeKEM($234Tree(), 'sync');
+
+const randInt = (u, l = 0) => Math.floor(Math.random() * (u - l) + l);
+const randSeq = (n, k, addRatio, updateRatio) => {
+    const users = Array.from(Array(n), (_, i) => i);
+    const seq = Array(k);
+    let addCount = 0, removeCount = 0;
+    for (let i = 0, u = n; i < k; ++i) {
+        const a = randInt(users.length);
+        const rand = Math.random();
+        if (rand < addRatio || users.length === 1) {
+            seq[i] = ['add', users[a], u];
+            users.push(u);
+            ++u;
+            ++addCount;
+        } else if (rand >= addRatio + updateRatio) {
+            let b;
+            do {
+                b = randInt(users.length);
+            } while (b == a);
+            seq[i] = ['remove', users[a], users[b]];
+            users.splice(b, 1);
+            ++removeCount;
+        } else {
+            seq[i] = ['update', users[a]];
+        }
+    }
+    return {n, k, c: addCount, cr: removeCount, seq};
+};
+const insertUpdates = seq => {
+    const {n, c, cr, seq: _seq} = seq;
+    let {k} = seq;
+    const sequence = _seq.slice(); // copy
+    const met = [true];
+    for (let i = 0; i < k; ++i) {
+        const a = sequence[i][1];
+        if (!met[a]) {
+            sequence.splice(i, 0, ['update', a]);
+            ++k;
+            met[a] = true;
+        }
+    }
+    return {n, k, c, cr, seq: sequence};
+};
+const serialize = function * serialize(tree, depth = 0) {
+    if (tree === null) {
+        return;
+    }
+    yield Array(depth).fill('--').join('') + (tree.counts && `User ${tree.id}, Counts: [${tree.counts}]` || `Node`) + (depth > 0 ? `, Covered by Parent: ${(tree.parent.secret === true || tree.parent.secret.includes(tree))}` : '') + (depth > 1 ? `, Covered by Grandparent: ${(tree.parent.parent.secretGrand.includes(tree))}` : '');
+    for (const child of tree.children) {
+        yield * serialize(child, depth + 1);
+    }
+};
+const test = (TreeType, {n, k, seq}, add, remove, update, merge, split) => {
+    const TreeKEMType = TreeKEM(TreeType, add, remove, update, merge, split);
+    const tree = new TreeKEMType();
+    for (let i = 1; i < n; ++i) {
+        tree.add(0, i);
+    }
+    const cInit = [0, 0, 0, 0];
+    for (const user of tree.users) {
+        // console.log(user.counts);
+        user.counts.forEach((n, i) => cInit[i] += n);
+    }
+    console.log(cInit);
+    let c;
+    const s = [...serialize(tree.root)];
+    for (const [op, a, b] of seq) {
+        // tree[op](a, b);
+        switch (op) {
+            case 'add': {
+                tree.add(a, b);
+            } break;
+            case 'remove': {
+                tree.remove(a, b);
+            } break;
+            case 'update': {
+                tree.update(a);
+            } break;
+            default: {
+                throw new TypeError();
+            } break;
+        }
+        c = cInit.map(x => -x);
+        for (const user of tree.users) {
+            // console.log(user.counts);
+            user.counts.forEach((n, i) => c[i] += n);
+        }
+        s.push('\n', `Operation: ${[op, a, b]}`, ...serialize(tree.root), `Counts: ${c}`);
+    }
+    return [c, s];
+};
+
+const arraySum = arrays => arrays.flat();
+const arrayProd = arrays => arrays.reduce((s, array) => s.flatMap(tuple => array.map(x => [...tuple, x])), [[]]);
+document.getElementById('restart').addEventListener('click', async () => {
+    const LeftTreeTypes = arrayProd(['left-position', 'left-truncate'].map(id => parse(document.getElementById(id).value))).map(([position, truncate]) => Object.assign(LeftTree(position, truncate), {position, truncate}));
+    const BTreeTypes = arrayProd(['b-position', 'b-degree'].map(id => parse(document.getElementById(id).value))).map(([position, degree]) => Object.assign(BTree(Number(degree), position), {position, degree}));
+    const TreeTypes = arraySum([LeftTreeTypes, BTreeTypes]);
+    const KEMOptions = arrayProd(['insert', 'add', 'remove', 'update', 'merge', 'split'].map(id => parse(document.getElementById(id).value)));
+    const expOptions = arrayProd([ /*'n',*/ 'k', 'r', 'ru'].map(id => parse('[' + document.getElementById(id).value + ']')));
+    const nOptions = arrayProd(['n'].map(id => parse('[' + document.getElementById(id).value + ']')));
+    const seqOptions = arrayProd(['sequence'].map(id => parse(document.getElementById(id).value)));
+    const expOptionsAll = arrayProd([nOptions, arraySum([
+        arrayProd([seqOptions.filter(([sequence]) => sequence === 'random'), expOptions]),
+        arrayProd([seqOptions.filter(([sequence]) => sequence === 'manual')]),
+    ])]); // experiments = (n) * (('random') * (k * r * ru) + ('manual')) * (insert * add * remove * update * merge * split) * trees
+    const table = document.getElementById('results');
+    table.querySelectorAll('tr').forEach((tr, i) => {
+        if (i > 0) {
+            tr.remove();
+        }
+    });
+    for (const [[n], [[sequence], [k, r, ru] = [NaN, NaN, NaN]]] of expOptionsAll) {
+        let seqRaw;
+        if (sequence === 'random') {
+            seqRaw = randSeq(n, k, r, ru);
+        } else if (sequence === 'manual') {
+            const seqString = document.getElementById('seq').value;
+            const seq = seqString.split(',').reduce((seq, tag, i, a) => {
+                if (tag === 'add' || tag === 'remove') {
+                    seq.push([tag, Number(a[i+1]), Number(a[i+2])]);
+                } else if (tag === 'update') {
+                    seq.push([tag, Number(a[i+1])]);
+                }
+                return seq;
+            }, []);
+            seqRaw = {n, k: seq.length, c: seq.filter(op => op[0] === 'add').length, cr: seq.filter(op => op[0] === 'remove').length, seq};
+        } else {
+            throw new TypeError();
+        }
+        for (const [_insert, _add, remove, update, merge, split] of KEMOptions) {
+            for (const TreeType of TreeTypes) {
+                await new Promise(resolve => setTimeout(resolve, 0)); // yield to html rendering
+                const add = _add === 'async-sync' ? TreeType.name === 'LeftTree' ? 'async' : 'sync' : _add;
+                const insert = _insert === 'async-sync' ? add === 'async' ? 'insert' : 'untouched' : _insert;
+                const seq = insert === 'insert' ? insertUpdates(seqRaw) : seqRaw;
+                const [c, s] = test(TreeType, seq, add, remove, update, merge, split);
+                console.info(n, sequence, k, r, ru, insert, add, remove, update, merge, split, TreeType.name, TreeType.position, TreeType.truncate, TreeType.degree, c);
+                table.insertAdjacentHTML('beforeend', (
+`
+    <tr ${TreeType.name === 'BTree' ? 'style="color: blue;"' : ''}>
+        <td>${TreeType.name === 'BTree' ? `2-${TreeType.degree} tree (${TreeType.position})` : `left tree (${TreeType.position}, ${TreeType.truncate})`} KEM (${insert}, ${add}, ${remove}, ${update}, ${merge}, ${split})</td>
+        <td>${seq.n}</td>
+        <td>${seq.k}</td>
+        <td>${r}</td>
+        <td>${1 - r - ru}</td>
+        <td>${ru}</td>
+        <td>${seq.c}</td>
+        <td>${seq.cr}</td>
+        <td>${seq.k - seq.c - seq.cr}</td>
+        ${c.map(x => `<td>${x}</td>`).join('')}
+        <td><button onclick="alert('${seq.seq}');">Show</button></td>
+        <td><button onclick="document.getElementById('tr').value = \`${document.getElementById('trace').checked ? s.join('\n') : ''}\`;">Log</button></td>
+    </tr>
+`
+                ));
+            }
+        }
+    }
+});
+
+window.addEventListener('load', () => document.getElementById('restart').click());
+</script>
+
+</body></html>
