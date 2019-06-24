@@ -134,6 +134,8 @@ function generateSelect(id, values, selected = null) {
         <td>#Gen</td>
         <td>#Enc</td>
         <td>#Dec</td>
+        <td>#Dec-PRG</td>
+        <td>#Dec-Gen</td>
         <td>Op. Seq.</td>
         <td>Trace</td>
     </tr>
@@ -441,7 +443,7 @@ const TreeKEM = (TreeType, add = 'async', remove = 'remover', update = 'LCA', me
     return (
 class TreeKEM {
     constructor() {
-        this.root = new TreeType(undefined, undefined, {removed: false, id: 0, counts: [0, 0, 0, 0]});
+        this.root = new TreeType(undefined, undefined, {removed: false, id: 0, counts: [0, 0, 0, 0, 0, 0]});
         this.users = [this.root];
         this.options = {};
     }
@@ -450,7 +452,7 @@ class TreeKEM {
     }
     add(a, b) {
         assert(a in this.users && b === this.users.length);
-        this.users.push(new TreeType(undefined, undefined, {removed: false, id: b, counts: [0, 0, 0, 0]})); // counts: [prg, gen, enc, dec]
+        this.users.push(new TreeType(undefined, undefined, {removed: false, id: b, counts: [0, 0, 0, 0, 0, 0]})); // counts: [prg, gen, enc, dec, dec-prg, dec-gen]
         const ua = this.users[a], ub = this.users[b];
         let onRemoveChild;
         switch (split) {
@@ -617,7 +619,7 @@ class TreeKEM {
             path[i].secret = [];
         }
     }
-    static broadcast(root, counts, count = true, secretGrand = []) {
+    static broadcast(root, counts, update = root.parent, count = true, secretGrand = []) {
         assert(root !== null);
         if (root.removed) {
             return;
@@ -627,6 +629,13 @@ class TreeKEM {
                 ++counts[2]; // enc
             }
             ++root.counts[3]; // dec
+            assert(update !== null);
+            for (let node = update; node !== null; node = node.parent) {
+                ++root.counts[4]; // dec-prg
+                if (node.parent !== null) {
+                    ++root.counts[5]; // dec-gen
+                }
+            }
             return;
         }
         assert(root.secret === true || root.secret.every(c => root.children.includes(c)));
@@ -634,12 +643,12 @@ class TreeKEM {
         for (const child of root.children) {
             if (secretGrand.includes(child)) {
                 useSecretGrand = true;
-                selfSecretGrandUsed = this.broadcast(child, null, false, root.secretGrand);
+                selfSecretGrandUsed = this.broadcast(child, null, update, false, root.secretGrand);
             } else if (root.secret === true || root.secret.includes(child)) {
                 useSecret = true;
-                selfSecretGrandUsed = this.broadcast(child, null, false, root.secretGrand);
+                selfSecretGrandUsed = this.broadcast(child, null, update, false, root.secretGrand);
             } else {
-                selfSecretGrandUsed = this.broadcast(child, counts, count, root.secretGrand);
+                selfSecretGrandUsed = this.broadcast(child, counts, update, count, root.secretGrand);
             }
         }
         if (count) {
@@ -744,7 +753,7 @@ const test = (TreeType, {n, k, seq}, add, remove, update, merge, split) => {
     for (let i = 1; i < n; ++i) {
         tree.add(0, i);
     }
-    const cInit = [0, 0, 0, 0];
+    const cInit = [0, 0, 0, 0, 0, 0];
     for (const user of tree.users) {
         // console.log(user.counts);
         user.counts.forEach((n, i) => cInit[i] += n);
