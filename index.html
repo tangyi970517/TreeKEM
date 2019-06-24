@@ -208,6 +208,9 @@ class LeftTree extends Tree { // left-balanced tree: either perfect, or left chi
     truncate() {
         const node = this.childR;
         if (node === null) {
+            if (!this.recycle) {
+                return this;
+            }
             throw new Error('attempting to remove the last node');
         }
         if ( /* node.childL === null && */ node.childR === null) { // leaf
@@ -445,7 +448,6 @@ class TreeKEM {
     constructor() {
         this.root = new TreeType(undefined, undefined, {removed: false, id: 0, counts: [0, 0, 0, 0, 0, 0]});
         this.users = [this.root];
-        this.options = {};
     }
     init(n) {
         throw new Error('not implemented');
