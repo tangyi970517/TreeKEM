@@ -720,8 +720,10 @@ const insertUpdates = seq => {
     for (let i = 0; i < k; ++i) {
         const a = sequence[i][1];
         if (!met[a]) {
-            sequence.splice(i, 0, ['update', a]);
-            ++k;
+            if (sequence[i][0] !== 'update') {
+                sequence.splice(i, 0, ['update', a]);
+                ++k;
+            }
             met[a] = true;
         }
     }
