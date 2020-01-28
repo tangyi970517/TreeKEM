@@ -32,14 +32,14 @@ function generateSelect(id, values, selected = null) {
 <p>Left-balanced tree - position to add new leaf: <script>generateSelect('left-position', ['greedy', 'random', 'append'])</script></p>
 <ul>
     <li>Greedy: choose closest (in terms of LCA) blank leaf or append if no blank leaf</li>
-    <li>Random: uniformly choose a blank leaf <em>including the append position as an pseudo blank leaf</em></li>
+    <li>Random: uniformly choose a blank leaf <em>including the append position as a pseudo blank leaf</em></li>
     <li>Append: append to the end</li>
 </ul>
 
 <p>Left-balanced tree - truncate strategy: <script>generateSelect('left-truncate', ['truncate', 'keep'], 'truncate')</script></p>
 <ul>
     <li>Truncate: truncate the tree when the leaf at the end is removed</li>
-    <li>Keep: keep the removed the leaf at the end as blank leaf</li>
+    <li>Keep: keep the removed leaf at the end as blank leaf</li>
 </ul>
 
 <p>B tree - position to add new leaf: <script>generateSelect('b-position', ['greedy', 'random'])</script></p>
