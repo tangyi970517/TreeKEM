@@ -61,10 +61,10 @@ function generateSelect(id, values, selected = null) {
     <li>Sync: include update of new user (done by adder) in add</li>
 </ul>
 
-<p>KEM - remove strategy: <script>generateSelect('remove', ['remover', 'remover-after', 'removee'])</script></p>
+<p>KEM - remove strategy: <script>generateSelect('remove', ['remover', 'remover-before', 'removee'])</script></p>
 <ul>
     <li>Remover: blank out the direct path of removee, remove from tree, and then update at the remover</li>
-    <li>Remover-after: blank out the direct path of removee, update at the remover, and then remove from tree</li>
+    <li>Remover-before: blank out the direct path of removee, update at the remover, and then remove from tree</li>
     <li>Removee: update at the removee and then blank out (and then remove from tree)</li>
 </ul>
 
@@ -431,7 +431,7 @@ const TreeKEM = (TreeType, add = 'async', remove = 'remover', update = 'LCA', me
         'sync',
     ].includes(add) && [
         'remover',
-        'remover-after',
+        'remover-before',
         'removee',
     ].includes(remove) && [
         'LCA',
@@ -541,7 +541,7 @@ class TreeKEM {
                     onAddChild(node, ...children);
                 }
             } break;
-            case 'remover-after': {
+            case 'remover-before': {
                 // blank out
                 let node = ub.parent;
                 while (node !== null) {
